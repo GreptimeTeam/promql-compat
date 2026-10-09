@@ -13,6 +13,9 @@ Prometheus HTTP API (GreptimeDB: `/v1/prometheus/api/v1`, VictoriaMetrics: `/api
 reference is an in-process server built from the Prometheus remote write receiver, TSDB, PromQL
 engine and API JSON codec, exposing the same API. The same HTTP client is used for all of them.
 
+Agents: [SKILL.md](SKILL.md) describes how to run the harness, read a report, compare runs and
+investigate a failing query.
+
 ## Suites
 
 | Suite | Oracle | Data | Cases |
