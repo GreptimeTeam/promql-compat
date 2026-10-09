@@ -15,16 +15,49 @@ import (
 	"github.com/GreptimeTeam/promql-compat/internal/result"
 )
 
-// Epsilon is the relative tolerance, the same as promqltest.
-const Epsilon = 1e-6
+const (
+	// Epsilon is the relative tolerance for well-conditioned evaluation.
+	// Measured against GreptimeDB and VictoriaMetrics, such queries agree
+	// within 1e-12, while semantic differences hidden by 1e-6 start at 1.6e-9
+	// (an off-by-two on 8e8, a 150 s offset on a timestamp).
+	Epsilon = 1e-10
+	// IllConditionedEpsilon is for queries using least-squares regression or
+	// variance: equivalent implementations differ there up to 4e-8, on both
+	// sides of the exact value.
+	IllConditionedEpsilon = 1e-6
+)
+
+var illConditioned = map[string]bool{
+	"deriv": true, "predict_linear": true, "stddev_over_time": true, "stdvar_over_time": true,
+}
+
+// Tolerance returns the relative tolerance for comparing results of expr:
+// IllConditionedEpsilon if any part of it is ill-conditioned, else Epsilon.
+func Tolerance(expr parser.Expr) float64 {
+	eps := Epsilon
+	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
+		switch x := n.(type) {
+		case *parser.Call:
+			if illConditioned[x.Func.Name] {
+				eps = IllConditionedEpsilon
+			}
+		case *parser.AggregateExpr:
+			if x.Op == parser.STDDEV || x.Op == parser.STDVAR {
+				eps = IllConditionedEpsilon
+			}
+		}
+		return nil
+	})
+	return eps
+}
 
 // noiseFloor: two results both smaller than this are treated as equal. They
 // come from catastrophic cancellation (stdvar of near-equal values), where
 // even two Prometheus runs disagree in the leading digit.
 const noiseFloor = 1e-10
 
-func floatEqual(a, b float64) bool {
-	if almost.Equal(a, b, Epsilon) {
+func floatEqual(a, b, eps float64) bool {
+	if almost.Equal(a, b, eps) {
 		return true
 	}
 	return math.Abs(a) < noiseFloor && math.Abs(b) < noiseFloor
@@ -32,16 +65,17 @@ func floatEqual(a, b float64) bool {
 
 const maxDiffs = 5
 
-// Values compares got against ref. ordered requires instant vectors to match
-// in order (sort(), sort_desc() and friends at the top level).
-func Values(ref, got parser.Value, ordered bool) (result.Status, string) {
+// Values compares got against ref with relative tolerance eps. ordered
+// requires instant vectors to match in order (sort(), sort_desc() and friends
+// at the top level).
+func Values(ref, got parser.Value, ordered bool, eps float64) (result.Status, string) {
 	if ref.Type() != got.Type() {
 		return result.FailValue, fmt.Sprintf("result type %s, want %s", got.Type(), ref.Type())
 	}
 	switch r := ref.(type) {
 	case promql.Scalar:
 		g := got.(promql.Scalar)
-		if r.T != g.T || !floatEqual(r.V, g.V) {
+		if r.T != g.T || !floatEqual(r.V, g.V, eps) {
 			return result.FailValue, fmt.Sprintf("scalar %v@%d, want %v@%d", g.V, g.T, r.V, r.T)
 		}
 	case promql.String:
@@ -50,21 +84,21 @@ func Values(ref, got parser.Value, ordered bool) (result.Status, string) {
 			return result.FailValue, fmt.Sprintf("string %q, want %q", g.V, r.V)
 		}
 	case promql.Vector:
-		return vectors(r, got.(promql.Vector), ordered)
+		return vectors(r, got.(promql.Vector), ordered, eps)
 	case promql.Matrix:
-		return matrices(r, got.(promql.Matrix))
+		return matrices(r, got.(promql.Matrix), eps)
 	}
 	return result.Pass, ""
 }
 
-func vectors(ref, got promql.Vector, ordered bool) (result.Status, string) {
+func vectors(ref, got promql.Vector, ordered bool, eps float64) (result.Status, string) {
 	var diffs []string
 	if ordered {
 		if len(ref) != len(got) {
 			diffs = append(diffs, fmt.Sprintf("%d samples, want %d", len(got), len(ref)))
 		}
 		for i := 0; i < len(ref) && i < len(got) && len(diffs) < maxDiffs; i++ {
-			if !labels.Equal(ref[i].Metric, got[i].Metric) || !sampleEqual(ref[i], got[i]) {
+			if !labels.Equal(ref[i].Metric, got[i].Metric) || !sampleEqual(ref[i], got[i], eps) {
 				diffs = append(diffs, fmt.Sprintf("position %d: got %s, want %s", i, fmtSample(got[i]), fmtSample(ref[i])))
 			}
 		}
@@ -85,7 +119,7 @@ func vectors(ref, got promql.Vector, ordered bool) (result.Status, string) {
 		switch {
 		case !ok:
 			diffs = append(diffs, "missing "+fmtSample(r))
-		case !sampleEqual(r, g):
+		case !sampleEqual(r, g, eps):
 			diffs = append(diffs, fmt.Sprintf("got %s, want %s", fmtSample(g), fmtSample(r)))
 		}
 	}
@@ -97,7 +131,7 @@ func vectors(ref, got promql.Vector, ordered bool) (result.Status, string) {
 	return verdict(diffs)
 }
 
-func sampleEqual(a, b promql.Sample) bool {
+func sampleEqual(a, b promql.Sample, eps float64) bool {
 	if a.T != b.T {
 		return false
 	}
@@ -107,7 +141,7 @@ func sampleEqual(a, b promql.Sample) bool {
 	if a.H != nil {
 		return a.H.Equals(b.H)
 	}
-	return floatEqual(a.F, b.F)
+	return floatEqual(a.F, b.F, eps)
 }
 
 func fmtSample(s promql.Sample) string {
@@ -117,7 +151,7 @@ func fmtSample(s promql.Sample) string {
 	return fmt.Sprintf("%s => %v@%d", s.Metric, s.F, s.T)
 }
 
-func matrices(ref, got promql.Matrix) (result.Status, string) {
+func matrices(ref, got promql.Matrix, eps float64) (result.Status, string) {
 	status := result.Pass
 	detail := ""
 	if !sort.IsSorted(got) {
@@ -144,7 +178,7 @@ func matrices(ref, got promql.Matrix) (result.Status, string) {
 			diffs = append(diffs, fmt.Sprintf("missing series %s (%d points, first %s)", r.Metric, len(r.Floats), firstPoint(r)))
 			continue
 		}
-		if d := seriesDiff(r, g); d != "" {
+		if d := seriesDiff(r, g, eps); d != "" {
 			diffs = append(diffs, r.Metric.String()+": "+d)
 		}
 	}
@@ -167,7 +201,7 @@ func firstPoint(s promql.Series) string {
 }
 
 // seriesDiff describes the first differences between two float series.
-func seriesDiff(ref, got promql.Series) string {
+func seriesDiff(ref, got promql.Series, eps float64) string {
 	rm := map[int64]float64{}
 	for _, p := range ref.Floats {
 		rm[p.T] = p.F
@@ -186,7 +220,7 @@ func seriesDiff(ref, got promql.Series) string {
 			if len(diffs) < 3 {
 				diffs = append(diffs, fmt.Sprintf("missing point %v@%d", p.F, p.T))
 			}
-		case !floatEqual(p.F, g):
+		case !floatEqual(p.F, g, eps):
 			n++
 			if len(diffs) < 3 {
 				diffs = append(diffs, fmt.Sprintf("@%d got %v want %v", p.T, g, p.F))

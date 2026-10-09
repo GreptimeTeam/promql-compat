@@ -58,10 +58,58 @@ func TestValuesSemantics(t *testing.T) {
 		{"matrix series order", mat, promql.Matrix{mat[1], mat[0]}, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			st, detail := Values(tc.ref, tc.got, tc.ordered)
+			st, detail := Values(tc.ref, tc.got, tc.ordered, Epsilon)
 			if st.Passed() != tc.pass {
 				t.Fatalf("status %s (%s), want pass=%v", st, detail, tc.pass)
 			}
 		})
+	}
+}
+
+// Differences measured between Prometheus and real targets: semantic ones
+// that 1e-6 used to hide must fail, regression noise must pass.
+func TestToleranceSeparatesMeasuredDifferences(t *testing.T) {
+	for _, tc := range []struct {
+		name, expr string
+		ref, got   float64
+		pass       bool
+	}{
+		{"timestamp 150s off", "timestamp(demo_num_cpus)", 1772322750, 1772322600, false},
+		{"x + -(1) evaluated as x + 1", "demo_memory_usage_bytes + -(1)", 799999999, 800000001, false},
+		{"deriv regression noise", "deriv(demo_batch_last_success_timestamp_seconds[10m])", 0.9956767206480017, 0.9956766794907801, true},
+		{"stdvar_over_time noise", "stdvar_over_time(demo_memory_usage_bytes[1m])", 33272257359.175594, 33272257359.303665, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, err := parser.NewParser(parser.Options{}).ParseExpr(tc.expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref := promql.Vector{sample("m", "a", 1000, tc.ref)}
+			got := promql.Vector{sample("m", "a", 1000, tc.got)}
+			if st, detail := Values(ref, got, false, Tolerance(e)); st.Passed() != tc.pass {
+				t.Fatalf("status %s (%s), want pass=%v", st, detail, tc.pass)
+			}
+		})
+	}
+}
+
+func TestToleranceClasses(t *testing.T) {
+	for expr, want := range map[string]float64{
+		"timestamp(m)":                     Epsilon,
+		"rate(m[5m])":                      Epsilon,
+		"sum by (job) (m)":                 Epsilon,
+		"deriv(m[5m])":                     IllConditionedEpsilon,
+		"predict_linear(m[5m], 60)":        IllConditionedEpsilon,
+		"stddev(m)":                        IllConditionedEpsilon,
+		"stdvar_over_time(m[1m]) + time()": IllConditionedEpsilon,
+		"atan(sinh(deriv(m[10m])))":        IllConditionedEpsilon,
+	} {
+		e, err := parser.NewParser(parser.Options{}).ParseExpr(expr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := Tolerance(e); got != want {
+			t.Errorf("Tolerance(%s) = %g, want %g", expr, got, want)
+		}
 	}
 }

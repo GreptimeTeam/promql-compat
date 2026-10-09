@@ -88,7 +88,8 @@ smallest query that still differs.
 
 - Never commit `out/` or `bin/`.
 - VictoriaMetrics cannot run the corpus: it rejects samples before 1970-01-02.
-- The diff suites compare floats with a 1e-6 relative tolerance; differences below that (for
-  example a 150 s offset on a timestamp-valued result) pass. Check suspicious passes with
-  `--probe`.
+- The diff suites compare floats with a relative tolerance of 1e-10, or 1e-6 when the query uses
+  `deriv`, `predict_linear`, `stddev`, `stdvar` or their `_over_time` forms. In such a query a
+  difference elsewhere below 1e-6 still passes, and so does a difference diluted by a much larger
+  addend. The corpus keeps upstream's 1e-6. Check suspicious passes with `--probe`.
 - `--keep-data` keeps the target's data directory under `--out` for inspection after the run.

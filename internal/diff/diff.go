@@ -115,9 +115,10 @@ func (r *Runner) Check(ctx context.Context, db, expr string, q Query) result.Che
 	case gerr != nil:
 		ch.Status, ch.Detail = result.FailError, gerr.Error()
 	default:
-		ordered := false
-		if e, err := parser.NewParser(parser.Options{EnableExperimentalFunctions: true}).ParseExpr(expr); err == nil && q.Step == 0 {
-			ordered = compare.Ordered(e)
+		ordered, eps := false, compare.Epsilon
+		if e, err := parser.NewParser(parser.Options{EnableExperimentalFunctions: true}).ParseExpr(expr); err == nil {
+			ordered = q.Step == 0 && compare.Ordered(e)
+			eps = compare.Tolerance(e)
 		}
 		if r.Ref2 != nil {
 			// Tie-breaking and float summation order vary between runs, so
@@ -137,17 +138,17 @@ func (r *Runner) Check(ctx context.Context, db, expr string, q Query) result.Che
 					ch.Status, ch.Detail = result.FailTransport, "reference recheck: "+err.Error()
 					return ch
 				}
-				if st, _ := compare.Values(ref.Value, ref2.Value, ordered); !st.Passed() {
+				if st, _ := compare.Values(ref.Value, ref2.Value, ordered, eps); !st.Passed() {
 					ch.Nondeterministic = true
 				}
 			}
 		}
-		ch.Status, ch.Detail = compare.Values(ref.Value, got.Value, ordered)
+		ch.Status, ch.Detail = compare.Values(ref.Value, got.Value, ordered, eps)
 		if ch.Status.Passed() {
 			ch.Evidence = result.EvidenceOf(ref.Empty())
 		}
 		if ch.Status == result.FailValue {
-			if st, _ := compare.Values(compare.DropName(ref.Value), compare.DropName(got.Value), ordered); st.Passed() {
+			if st, _ := compare.Values(compare.DropName(ref.Value), compare.DropName(got.Value), ordered, eps); st.Passed() {
 				ch.Cause = result.CauseMetricName
 			}
 		}

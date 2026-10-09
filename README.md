@@ -127,6 +127,11 @@ only one run or in scope in only one; those cases are not compared.
 - VictoriaMetrics rejects samples before 1970-01-02, and the corpus loads its data from the epoch,
   so the `corpus` suite and `--probe-data` are not supported for it. Its HTTP API has no dataset
   isolation; each run starts a private instance.
+- `compliance` and `fuzz` compare floats with a relative tolerance of 1e-10, or 1e-6 for queries
+  using `deriv`, `predict_linear`, `stddev`, `stdvar` or their `_over_time` forms, where equivalent
+  implementations differ by up to 4e-8. In those queries a difference elsewhere below 1e-6 passes,
+  as does any difference diluted below the tolerance by a larger addend. The corpus keeps
+  upstream's 1e-6.
 - Native histogram results are decoded from the API JSON form, which drops the schema; these cases
   are excluded.
 - The reference runs with Prometheus server defaults for `compliance` and `fuzz`: 5m lookback,
