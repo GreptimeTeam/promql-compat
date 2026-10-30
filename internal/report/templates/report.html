@@ -4,95 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PromQL compatibility · {{.Target}}{{if .Label}} {{.Label}}{{end}}</title>
-<style>
-:root {
-  color-scheme: light;
-  --page: #f9f9f7;
-  --surface: #fcfcfb;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --muted: #898781;
-  --grid: #e1e0d9;
-  --border: rgba(11, 11, 11, 0.10);
-  --code-bg: #f0efec;
-  --s1: #2a78d6;
-  --s2: #1baf7a;
-  --s3: #eb6834;
-  --track: #cde2fb;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --page: #0d0d0d;
-    --surface: #1a1a19;
-    --ink: #ffffff;
-    --ink-2: #c3c2b7;
-    --grid: #2c2c2a;
-    --border: rgba(255, 255, 255, 0.10);
-    --code-bg: #262624;
-    --s1: #3987e5;
-    --s2: #199e70;
-    --s3: #d95926;
-    --track: #184f95;
-  }
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  background: var(--page);
-  color: var(--ink);
-  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-main { max-width: 1080px; margin: 0 auto; padding: 40px 24px 64px; }
-h1 { font-size: 28px; font-weight: 600; margin: 4px 0 8px; letter-spacing: -0.01em; }
-h2 { font-size: 17px; font-weight: 600; margin: 0 0 4px; }
-h3 { font-size: 14px; font-weight: 600; margin: 20px 0 8px; }
-p { margin: 0; }
-.overline { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-.label { display: inline-block; margin-left: 8px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; font-weight: 500; color: var(--ink-2); vertical-align: middle; }
-.meta { display: flex; flex-wrap: wrap; gap: 4px 20px; color: var(--ink-2); font-size: 13px; }
-.meta b { color: var(--muted); font-weight: 500; margin-right: 4px; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-top: 16px; }
-.caption { color: var(--ink-2); font-size: 13px; margin-bottom: 16px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 28px; }
-.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
-.tile .name { color: var(--ink-2); font-size: 13px; font-weight: 500; }
-.tile .value { font-size: 36px; font-weight: 600; line-height: 1.2; margin: 6px 0 2px; }
-.tile .sub { color: var(--ink-2); font-size: 13px; }
-.tile .alt { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--grid); display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-2); }
-.tile .alt span:last-child { color: var(--ink); font-weight: 600; }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 13px; color: var(--ink-2); margin-bottom: 14px; }
-.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
-.bars { display: grid; grid-template-columns: 96px 1fr auto; gap: 12px 16px; align-items: center; }
-.bars .n { color: var(--ink-2); font-size: 13px; }
-.bars .t { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
-.bar { display: flex; gap: 2px; height: 20px; }
-.bar span { min-width: 2px; outline: none; }
-.bar span:last-child { border-radius: 0 4px 4px 0; }
-.bar span:hover, .bar span:focus-visible { filter: brightness(1.12); }
-.c1 { background: var(--s1); } .c2 { background: var(--s2); } .c3 { background: var(--s3); }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px 12px 6px 0; border-bottom: 1px solid var(--grid); white-space: nowrap; }
-td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
-tr:last-child td { border-bottom: none; }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.dim { color: var(--muted); }
-code { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg); border-radius: 4px; padding: 1px 5px; overflow-wrap: anywhere; }
-.sig { color: var(--ink-2); overflow-wrap: anywhere; }
-.meter { position: relative; width: 120px; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; display: inline-block; vertical-align: middle; }
-.meter span { position: absolute; inset: 0 auto 0 0; background: var(--s1); border-radius: 0 4px 4px 0; }
-details { margin-top: 14px; }
-summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
-details[open] summary { margin-bottom: 10px; }
-.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 32px; }
-.empty { color: var(--muted); font-size: 13px; }
-footer { margin-top: 28px; color: var(--ink-2); font-size: 13px; }
-footer p + p { margin-top: 8px; }
-#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); display: none; }
-#tip b { display: block; font-size: 15px; }
-#tip span { color: var(--ink-2); }
-@media (max-width: 640px) { .bars { grid-template-columns: 72px 1fr; } .bars .t { display: none; } }
-</style>
+{{template "style"}}
 </head>
 <body>
 <main>
@@ -245,27 +157,6 @@ footer p + p { margin-top: 8px; }
   {{- end}}
 </footer>
 </main>
-<div id="tip" role="status"><b></b><span></span></div>
-<script>
-(() => {
-  const tip = document.getElementById("tip");
-  const [value, key] = tip.children;
-  const show = (el, x, y) => {
-    value.textContent = el.dataset.v;
-    key.textContent = el.dataset.k;
-    tip.style.display = "block";
-    const w = tip.offsetWidth;
-    tip.style.left = Math.min(x + 12, window.innerWidth - w - 8) + "px";
-    tip.style.top = (y + 16) + "px";
-  };
-  const hide = () => { tip.style.display = "none"; };
-  for (const el of document.querySelectorAll("[data-v]")) {
-    el.addEventListener("pointermove", e => show(el, e.clientX, e.clientY));
-    el.addEventListener("pointerleave", hide);
-    el.addEventListener("focus", () => { const r = el.getBoundingClientRect(); show(el, r.left, r.bottom - 8); });
-    el.addEventListener("blur", hide);
-  }
-})();
-</script>
+{{template "tip"}}
 </body>
 </html>

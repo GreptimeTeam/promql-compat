@@ -84,6 +84,10 @@ Other modes:
 # Cases that flipped between two runs. Exits with status 1 if an in-scope case regressed.
 ./bin/promql-compat -compare out/a/results.json -against out/b/results.json
 
+# One page showing how compatibility changes over two or more runs, oldest first: rates per run,
+# cases fixed and regressed between consecutive runs, and the constructs that changed most.
+./bin/promql-compat -compare-html out/history.html out/a/results.json out/b/results.json out/c/results.json
+
 # Regenerate REPORT.md and REPORT.html from results.json.
 ./bin/promql-compat --rerender out/a/results.json
 

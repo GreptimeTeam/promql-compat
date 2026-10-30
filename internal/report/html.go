@@ -2,25 +2,36 @@ package report
 
 import (
 	"bytes"
-	_ "embed"
+	"embed"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"sort"
 	"strings"
 	"time"
 )
 
-//go:embed report.html
-var htmlSource string
+//go:embed templates/*.html
+var templateFS embed.FS
 
-var htmlTemplate = template.Must(template.New("report").Funcs(template.FuncMap{
+var templates = template.Must(template.New("").Funcs(template.FuncMap{
 	"pct": func(n, total int) float64 {
 		if total == 0 {
 			return 0
 		}
 		return 100 * float64(n) / float64(total)
 	},
-}).Parse(htmlSource))
+	// pp formats a change in percentage points with an explicit sign.
+	"pp": func(d float64) string {
+		switch {
+		case d >= 0.05:
+			return fmt.Sprintf("+%.1f pp", d)
+		case d <= -0.05:
+			return fmt.Sprintf("−%.1f pp", -d)
+		}
+		return "±0 pp"
+	},
+}).ParseFS(templateFS, "templates/*.html"))
 
 type htmlSuite struct {
 	Name                               string
@@ -117,7 +128,7 @@ func (rep *Report) HTML() (string, error) {
 		d.Weakest = d.Weakest[:15]
 	}
 	var b bytes.Buffer
-	if err := htmlTemplate.Execute(&b, d); err != nil {
+	if err := templates.ExecuteTemplate(&b, "report.html", d); err != nil {
 		return "", err
 	}
 	return b.String(), nil

@@ -60,7 +60,7 @@ header. Do not quote a rate without the excluded count.
 constructs and the top failure signatures. It leaves out the per-case failure list, so investigate
 from `REPORT.md`. Point the user to the file path; it opens without a server.
 
-## Compare two runs
+## Compare runs
 
 ```bash
 ./bin/promql-compat -compare out/base/results.json -against out/new/results.json
@@ -69,6 +69,18 @@ from `REPORT.md`. Point the user to the file path; it opens without a server.
 Exits 1 if an in-scope case regressed. `CONFIG DIFFERS` lines mean the runs are not directly
 comparable (different harness revision, fuzz seed or count, suites). GreptimeDB corpus failure
 details vary between identical runs; compare statuses, not detail text.
+
+To show how compatibility changes across versions, write a comparison page from two or more runs,
+oldest first:
+
+```bash
+./bin/promql-compat -compare-html out/v1.2.1-v1.3.0.html out/v1.2.1/results.json out/v1.3.0/results.json
+```
+
+It has the rate per suite and run, the fixed and regressed cases between consecutive runs, and the
+constructs whose pass rate changed most from the first run to the last. A callout marks pairs run
+with a different configuration. Run every version with the same harness revision and fuzz settings
+before comparing them.
 
 ## Investigate a failing query
 

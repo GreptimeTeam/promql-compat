@@ -4,105 +4,71 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 
 	"github.com/GreptimeTeam/promql-compat/internal/report"
-	"github.com/GreptimeTeam/promql-compat/internal/result"
 )
 
+func loadReport(path string) (*report.Report, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var r report.Report
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return &r, nil
+}
+
 // compareRuns prints, per suite, the in-scope cases that flipped between two
-// runs, keyed by case ID and expression, and returns the number of
-// regressions. Cases present in only one run, or in scope in only one, are
-// counted but not compared.
+// runs and returns the number of regressions.
 func compareRuns(basePath, newPath string) (int, error) {
-	load := func(p string) (*report.Report, error) {
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			return nil, err
-		}
-		var r report.Report
-		return &r, json.Unmarshal(raw, &r)
-	}
-	base, err := load(basePath)
+	base, err := loadReport(basePath)
 	if err != nil {
 		return 0, err
 	}
-	cur, err := load(newPath)
+	cur, err := loadReport(newPath)
 	if err != nil {
 		return 0, err
 	}
-	key := func(c *result.Case) string { return c.ID + "\x00" + c.Expr }
-	baseCases := map[string]*result.Case{}
-	for i := range base.Cases {
-		baseCases[key(&base.Cases[i])] = &base.Cases[i]
-	}
-	type counts struct{ fixed, regressed, onlyBase, onlyNew, scopeChanged int }
-	per := map[string]*counts{}
-	get := func(suite string) *counts {
-		if per[suite] == nil {
-			per[suite] = &counts{}
-		}
-		return per[suite]
-	}
-	var regressions []string
-	matched := map[string]bool{}
-	for i := range cur.Cases {
-		c := &cur.Cases[i]
-		cnt := get(c.Suite)
-		b, ok := baseCases[key(c)]
-		if !ok {
-			cnt.onlyNew++
-			continue
-		}
-		matched[key(c)] = true
-		if c.Excluded() != b.Excluded() {
-			cnt.scopeChanged++
-			continue
-		}
-		if c.Excluded() {
-			continue
-		}
-		switch {
-		case c.Status.Passed() && !b.Status.Passed():
-			cnt.fixed++
-		case !c.Status.Passed() && b.Status.Passed():
-			cnt.regressed++
-			detail := ""
-			for _, ch := range c.Checks {
-				if !ch.Status.Passed() {
-					detail = ch.Detail
-					break
-				}
-			}
-			if len(detail) > 200 {
-				detail = detail[:200]
-			}
-			regressions = append(regressions, fmt.Sprintf("%s %s %q: %s", c.ID, c.Status, c.Expr, detail))
-		}
-	}
-	for i := range base.Cases {
-		if !matched[key(&base.Cases[i])] {
-			get(base.Cases[i].Suite).onlyBase++
-		}
-	}
-	var suites []string
-	for s := range per {
-		suites = append(suites, s)
-	}
-	sort.Strings(suites)
+	cmp := report.Compare(base, cur)
 	fmt.Printf("%s -> %s\n", base.Label, cur.Label)
 	for _, d := range base.Config.Diff(cur.Config) {
 		fmt.Println("  CONFIG DIFFERS", d)
 	}
-	total := 0
-	for _, s := range suites {
-		c := per[s]
-		total += c.regressed
+	for _, c := range cmp.Suites {
 		fmt.Printf("  %-11s fixed %d, regressed %d, only in base %d, only in new %d, scope changed %d\n",
-			s, c.fixed, c.regressed, c.onlyBase, c.onlyNew, c.scopeChanged)
+			c.Suite, c.Fixed, c.Regressed, c.OnlyBase, c.OnlyNew, c.ScopeChanged)
 	}
-	for _, r := range regressions {
-		fmt.Println("  REGRESSION", r)
+	for _, c := range cmp.Regressed {
+		detail := ""
+		if ch := report.FirstFailure(c); ch != nil {
+			detail = ch.Detail
+		}
+		if len(detail) > 200 {
+			detail = detail[:200]
+		}
+		fmt.Printf("  REGRESSION %s %s %q: %s\n", c.ID, c.Status, c.Expr, detail)
 	}
-	return total, nil
+	return len(cmp.Regressed), nil
+}
+
+// compareHTML writes a comparison page of two or more runs, oldest first.
+func compareHTML(out string, paths []string) error {
+	if len(paths) < 2 {
+		return fmt.Errorf("-compare-html needs at least two results.json files, got %d", len(paths))
+	}
+	reps := make([]*report.Report, len(paths))
+	for i, p := range paths {
+		r, err := loadReport(p)
+		if err != nil {
+			return err
+		}
+		reps[i] = r
+	}
+	page, err := report.CompareHTML(reps)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(out, []byte(page), 0o644)
 }

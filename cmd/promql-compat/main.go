@@ -50,7 +50,15 @@ func main() {
 	rerender := flag.String("rerender", "", "rewrite REPORT.md and REPORT.html next to this results.json and exit")
 	compareA := flag.String("compare", "", "base results.json; with -against, print flipped cases and exit (status 1 on regressions)")
 	compareB := flag.String("against", "", "new results.json for -compare")
+	compareOut := flag.String("compare-html", "", "write a comparison page of the results.json files given as arguments, oldest first, to this file and exit")
 	flag.Parse()
+	if *compareOut != "" {
+		if err := compareHTML(*compareOut, flag.Args()); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(*compareOut)
+		return
+	}
 	if *compareA != "" {
 		regressed, err := compareRuns(*compareA, *compareB)
 		if err != nil {

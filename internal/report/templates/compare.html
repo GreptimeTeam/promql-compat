@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PromQL compatibility · {{.Title}}</title>
+{{template "style"}}
+</head>
+<body>
+<main>
+<header>
+  <div class="overline">PromQL compatibility across runs</div>
+  <h1>{{.Title}}</h1>
+  <table>
+    <tr><th>Run</th><th>Target</th><th>Build</th><th>Harness</th><th>Started</th></tr>
+    {{- range .Runs}}
+    <tr><td>{{.Name}}</td><td>{{.Target}}</td><td>{{.Build}}</td><td>{{.Harness}}</td><td class="dim">{{.Started}}</td></tr>
+    {{- end}}
+  </table>
+  {{- range .Pairs}}{{if .ConfigDiff}}
+  <div class="callout">{{.From}} → {{.To}} ran with a different configuration, so their cases are not directly comparable: {{range $i, $d := .ConfigDiff}}{{if $i}}; {{end}}{{$d}}{{end}}.</div>
+  {{- end}}{{end}}
+</header>
+
+<section class="tiles">
+{{- range .Tiles}}
+  <div class="tile">
+    <div class="name">{{.Suite}}{{if .LastName}} · {{.LastName}}{{end}}</div>
+    {{- if .Strict.Total}}
+    <div class="value">{{printf "%.1f" (pct .Strict.Passed .Strict.Total)}}%</div>
+    {{- if .HasDelta}}
+    <div class="sub"><span class="delta {{if ge .StrictDelta 0.05}}up{{else if le .StrictDelta -0.05}}down{{else}}flat{{end}}">{{if ge .StrictDelta 0.05}}▲{{else if le .StrictDelta -0.05}}▼{{end}} {{pp .StrictDelta}}</span> from {{printf "%.1f" (pct .FirstStrict.Passed .FirstStrict.Total)}}% in {{.FirstName}}</div>
+    {{- else}}
+    <div class="sub">only in this run</div>
+    {{- end}}
+    <div class="alt"><span>Ignoring <code>__name__</code></span><span>{{printf "%.1f" (pct .ValuesOnly.Passed .ValuesOnly.Total)}}%{{if .HasDelta}} <span class="delta {{if ge .ValuesDelta 0.05}}up{{else if le .ValuesDelta -0.05}}down{{else}}flat{{end}}">{{pp .ValuesDelta}}</span>{{end}}</span></div>
+    {{- else}}
+    <div class="value">n/a</div>
+    <div class="sub">no in-scope cases</div>
+    {{- end}}
+  </div>
+{{- end}}
+</section>
+
+<section class="card">
+  <h2>Pass rate by run</h2>
+  <p class="caption">Share of in-scope cases that pass, per suite. The gap between the lines is the cases that differ from Prometheus only in <code>__name__</code>.</p>
+  <div class="legend">
+    <span><i class="k1"></i>Strict</span>
+    <span><i class="k2"></i>Ignoring <code>__name__</code></span>
+  </div>
+  <div class="charts">
+  {{- range .Charts}}
+    <div class="chart">
+      <h3>{{.Suite}}</h3>
+      <svg viewBox="0 0 {{.Width}} {{.Height}}" role="img" aria-label="{{.Suite}} pass rate by run">
+        {{- $c := .}}
+        {{- range .Grid}}
+        <line class="gridline" x1="{{$c.PlotLeft}}" x2="{{$c.PlotRight}}" y1="{{.Y}}" y2="{{.Y}}"></line>
+        <text class="tick" x="{{.X}}" y="{{.Y}}" dy="4" text-anchor="{{.Anchor}}">{{.Text}}</text>
+        {{- end}}
+        {{- range .XLabels}}
+        <text class="xlabel" x="{{.X}}" y="{{.Y}}" text-anchor="{{.Anchor}}">{{.Text}}</text>
+        {{- end}}
+        {{- if .ValuesPath}}<path class="line l2" d="{{.ValuesPath}}"></path>{{end}}
+        {{- if .StrictPath}}<path class="line l1" d="{{.StrictPath}}"></path>{{end}}
+        {{- range .Values}}<circle class="dot d2" cx="{{.X}}" cy="{{.Y}}" r="4"></circle>{{end}}
+        {{- range .Strict}}<circle class="dot d1" cx="{{.X}}" cy="{{.Y}}" r="4"></circle>{{end}}
+        {{- with .ValuesLabel}}<text class="endlabel" x="{{.X}}" y="{{.Y}}" text-anchor="{{.Anchor}}">{{.Text}}</text>{{end}}
+        {{- with .StrictLabel}}<text class="endlabel" x="{{.X}}" y="{{.Y}}" text-anchor="{{.Anchor}}">{{.Text}}</text>{{end}}
+        {{- range .Values}}<circle class="hit" cx="{{.X}}" cy="{{.Y}}" r="12" tabindex="0" data-v="{{.Rate}}" data-k="{{$c.Suite}} · {{.Run}} · {{.Series}}"></circle>{{end}}
+        {{- range .Strict}}<circle class="hit" cx="{{.X}}" cy="{{.Y}}" r="12" tabindex="0" data-v="{{.Rate}}" data-k="{{$c.Suite}} · {{.Run}} · {{.Series}}"></circle>{{end}}
+      </svg>
+    </div>
+  {{- end}}
+  </div>
+  <details>
+    <summary>Data table</summary>
+    <table>
+      <tr><th>Run</th>{{range .Suites}}<th class="num">{{.}} strict</th><th class="num">{{.}} ignoring <code>__name__</code></th>{{end}}</tr>
+      {{- range $i, $row := .Summary}}
+      <tr><td>{{(index $.Runs $i).Name}}</td>{{range $row}}<td class="num">{{.}}</td>{{end}}</tr>
+      {{- end}}
+    </table>
+  </details>
+</section>
+
+{{- range .Pairs}}
+<section class="card">
+  <h2><span class="from">{{.From}} →</span> {{.To}}</h2>
+  <p class="caption">In-scope cases matched by ID and expression. A case is fixed when it fails in {{.From}} and passes in {{.To}}, and regressed the other way round. Cases present in only one run, or excluded in only one, are not compared.</p>
+  <table>
+    <tr><th>Suite</th><th class="num">Fixed</th><th class="num">Regressed</th><th class="num">Only in {{.From}}</th><th class="num">Only in {{.To}}</th><th class="num">Scope changed</th></tr>
+    {{- range .Suites}}
+    <tr><td>{{.Suite}}</td><td class="num">{{if .Fixed}}<span class="delta up">▲ {{.Fixed}}</span>{{else}}0{{end}}</td><td class="num">{{if .Regressed}}<span class="delta down">▼ {{.Regressed}}</span>{{else}}0{{end}}</td><td class="num">{{.OnlyBase}}</td><td class="num">{{.OnlyNew}}</td><td class="num">{{.ScopeChanged}}</td></tr>
+    {{- end}}
+  </table>
+
+  <h3>Regressed cases ({{len .Regressed}})</h3>
+  {{- if .Regressed}}
+  <table>
+    <tr><th>Suite</th><th>Query</th><th>First failing check</th></tr>
+    {{- range .Regressed}}
+    <tr>
+      <td class="dim">{{.Suite}}<br>{{.Group}}</td>
+      <td><code>{{.Expr}}</code>{{if .Minimized}}<br><span class="dim">minimized</span> <code>{{.Minimized}}</code>{{end}}</td>
+      <td class="sig">{{.Status}}{{if .Query}} · <code>{{.Query}}</code>{{end}} <span class="dim">@ {{.Time}}</span><br>{{.Detail}}</td>
+    </tr>
+    {{- end}}
+  </table>
+  {{- else}}
+  <p class="empty">No in-scope case regressed.</p>
+  {{- end}}
+
+  <h3>Fixed cases ({{len .Fixed}})</h3>
+  {{- if .Fixed}}
+  <table>
+    <tr><th>Suite</th><th>File or query template</th><th class="num">Fixed</th></tr>
+    {{- range .FixedBy}}
+    <tr><td class="dim">{{.Suite}}</td><td><code>{{.Group}}</code></td><td class="num">{{.N}}</td></tr>
+    {{- end}}
+  </table>
+  <details>
+    <summary>All {{len .Fixed}} fixed cases</summary>
+    <table>
+      <tr><th>Suite</th><th>Query</th></tr>
+      {{- range .Fixed}}
+      <tr><td class="dim">{{.Suite}}</td><td><code>{{.Expr}}</code></td></tr>
+      {{- end}}
+    </table>
+  </details>
+  {{- else}}
+  <p class="empty">No in-scope case was fixed.</p>
+  {{- end}}
+</section>
+{{- end}}
+
+<section class="card">
+  <h2>Largest changes by construct</h2>
+  <p class="caption">Pass rate of the cases using each function, aggregation or operator, all suites combined, {{.First}} against {{.Last}}. Constructs with fewer than 10 in-scope cases in either run are left out.</p>
+  {{- if .Movers}}
+  <table>
+    <tr><th>Construct</th><th class="num">{{.First}}</th><th class="num">{{.Last}}</th><th class="num">Change</th></tr>
+    {{- range .Movers}}
+    <tr>
+      <td><code>{{.Name}}</code></td>
+      <td class="num">{{printf "%.0f" (pct .FirstPass .FirstTotal)}}% <span class="dim">{{.FirstPass}}/{{.FirstTotal}}</span></td>
+      <td class="num">{{printf "%.0f" (pct .LastPass .LastTotal)}}% <span class="dim">{{.LastPass}}/{{.LastTotal}}</span></td>
+      <td class="num"><span class="delta {{if gt .Delta 0.0}}up{{else}}down{{end}}">{{if gt .Delta 0.0}}▲{{else}}▼{{end}} {{pp .Delta}}</span></td>
+    </tr>
+    {{- end}}
+  </table>
+  {{- else}}
+  <p class="empty">No construct with 10 or more cases changed its pass rate.</p>
+  {{- end}}
+</section>
+
+<footer>
+  <p>A case passes when every query it issues returns the same result as Prometheus. Cases tagged native_histogram, start_timestamp, experimental, delayed_name_removal or nondeterministic are excluded from every rate. Rates of runs with different harness revisions, fuzz settings or suites are not directly comparable.</p>
+  <p>Each run's <code>REPORT.html</code> and <code>REPORT.md</code> have the details of that run.</p>
+</footer>
+</main>
+{{template "tip"}}
+</body>
+</html>
