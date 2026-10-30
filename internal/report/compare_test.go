@@ -62,3 +62,29 @@ func TestCompareHTMLRendersRunsWithDifferentSuites(t *testing.T) {
 		t.Fatal("regression missing")
 	}
 }
+
+// First and last labels extend inward from the plot edges, so long names
+// collide even with only two runs.
+func TestXLabelsDoNotOverlap(t *testing.T) {
+	x := func(n int) func(int) float64 {
+		return func(i int) float64 { return plotLeft + (plotRight-plotLeft)*float64(i)/float64(n-1) }
+	}
+	for _, names := range [][]string{
+		{"GreptimeDB v1.2.1 (abcdef0)", "GreptimeDB v1.3.0 (1234567)"},
+		{"v1.3.0-beta.1", "v1.3.0-beta.2", "v1.3.0-beta.3", "v1.3.0-beta.4", "v1.3.0-beta.5", "v1.3.0-beta.6", "v1.3.0-beta.7", "v1.3.0"},
+	} {
+		got := xLabels(names, x(len(names)))
+		if got[len(got)-1].Text != names[len(names)-1] {
+			t.Fatalf("%v: last run is not labelled", names)
+		}
+		for i := 1; i < len(got); i++ {
+			_, prevHi := labelExtent(got[i-1])
+			if lo, _ := labelExtent(got[i]); lo < prevHi+labelGap {
+				t.Fatalf("%v: %q and %q overlap", names, got[i-1].Text, got[i].Text)
+			}
+		}
+	}
+	if got := xLabels([]string{"v1.2.1", "v1.3.0"}, x(2)); len(got) != 2 {
+		t.Fatalf("short names: got %d labels, want 2", len(got))
+	}
+}

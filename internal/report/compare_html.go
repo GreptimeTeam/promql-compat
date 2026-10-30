@@ -227,30 +227,7 @@ func chartOf(suite string, rs [][2]Rate, names []string) trendChart {
 	for _, tick := range []float64{0, 25, 50, 75, 100} {
 		c.Grid = append(c.Grid, chartLabel{X: plotLeft - 8, Y: y(tick), Text: fmt.Sprintf("%.0f%%", tick), Anchor: "end"})
 	}
-	step := 1
-	if len(names) > 1 {
-		longest := 0
-		for _, n := range names {
-			longest = max(longest, len([]rune(n)))
-		}
-		spacing := (plotRight - plotLeft) / float64(len(names)-1)
-		step = int(math.Ceil((float64(longest)*labelCharWidth + labelGap) / spacing))
-	}
-	for i, n := range names {
-		// The last run is always labelled; a sampled label too close to it is dropped.
-		last := len(names) - 1
-		if i != last && (i%step != 0 || last-i < step) {
-			continue
-		}
-		anchor := "middle"
-		switch {
-		case len(names) > 1 && i == 0:
-			anchor = "start"
-		case len(names) > 1 && i == len(names)-1:
-			anchor = "end"
-		}
-		c.XLabels = append(c.XLabels, chartLabel{X: x(i), Y: plotBottom + 20, Text: n, Anchor: anchor})
-	}
+	c.XLabels = xLabels(names, x)
 	var sp, vp strings.Builder
 	for i, r := range rs {
 		if r[0].Total == 0 {
@@ -277,6 +254,48 @@ func chartOf(suite string, rs [][2]Rate, names []string) trendChart {
 		c.StrictLabel = &chartLabel{X: s.X + 8, Y: s.Y + 14, Text: fmt.Sprintf("%.1f%%", ratePct(s.Rate)), Anchor: "start"}
 	}
 	return c
+}
+
+// xLabels places run names under their points. The last run is always
+// labelled; the others are kept left to right while their estimated extent,
+// which depends on the anchor, clears every kept label and the last one.
+func xLabels(names []string, x func(int) float64) []chartLabel {
+	last := len(names) - 1
+	label := func(i int) chartLabel {
+		anchor := "middle"
+		switch {
+		case last > 0 && i == 0:
+			anchor = "start"
+		case last > 0 && i == last:
+			anchor = "end"
+		}
+		return chartLabel{X: x(i), Y: plotBottom + 20, Text: names[i], Anchor: anchor}
+	}
+	end := label(last)
+	endLeft, _ := labelExtent(end)
+	var out []chartLabel
+	right := math.Inf(-1)
+	for i := 0; i < last; i++ {
+		l := label(i)
+		lo, hi := labelExtent(l)
+		if lo < right+labelGap || hi+labelGap > endLeft {
+			continue
+		}
+		out = append(out, l)
+		right = hi
+	}
+	return append(out, end)
+}
+
+func labelExtent(l chartLabel) (lo, hi float64) {
+	w := float64(len([]rune(l.Text))) * labelCharWidth
+	switch l.Anchor {
+	case "start":
+		return l.X, l.X + w
+	case "end":
+		return l.X - w, l.X
+	}
+	return l.X - w/2, l.X + w/2
 }
 
 func rowOf(c *result.Case) caseRow {
