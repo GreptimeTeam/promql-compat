@@ -113,7 +113,7 @@ func (rep *Report) Summary() string {
 		v := views(m[n])
 		e := evidenceOf(m[n])
 		fmt.Fprintf(&b, "  %-11s strict %s | primary %s | values-only %s | excluded %d | passed with data %d/%d\n",
-			n, v[0], v[1], v[3], rateOf(m[n]).Excluded, e.data, e.passed)
+			n, v[0], v[1], v[3], rateOf(m[n]).Excluded, e.Data, e.Passed)
 	}
 	return b.String()
 }
@@ -176,7 +176,7 @@ func (rep *Report) Markdown() string {
 	w("| Suite | Passed (in scope) | Data | Empty only | Errors only |\n|---|---|---|---|---|\n")
 	for _, n := range names {
 		e := evidenceOf(m[n])
-		w("| %s | %d | %d | %d | %d |\n", n, e.passed, e.data, e.empty, e.errs)
+		w("| %s | %d | %d | %d | %d |\n", n, e.Passed, e.Data, e.Empty, e.Errs)
 	}
 	w("\n")
 	coverage(w, names, m)
@@ -205,32 +205,13 @@ func (rep *Report) Markdown() string {
 		w("### Failure causes (in scope)\n\n")
 		w("A case can fail for several causes. *Sole* counts cases where every failed check has this cause, i.e. the cases fixing this class alone would recover.\n\n")
 		w("| Cause | Cases involved | Sole cause |\n|---|---|---|\n")
-		involved, sole := map[string]int{}, map[string]int{}
-		for i := range cases {
-			c := &cases[i]
-			if c.Excluded() || c.Status.Passed() {
-				continue
-			}
-			cs := c.Causes()
-			for _, x := range cs {
-				involved[x]++
-			}
-			if len(cs) == 1 {
-				sole[cs[0]]++
-			}
-		}
-		var causes []string
-		for x := range involved {
-			causes = append(causes, x)
-		}
-		sort.Slice(causes, func(i, j int) bool { return involved[causes[i]] > involved[causes[j]] })
-		for _, x := range causes {
-			w("| %s | %d | %d |\n", x, involved[x], sole[x])
+		for _, cc := range causeCounts(cases) {
+			w("| %s | %d | %d |\n", cc.Cause, cc.Involved, cc.Sole)
 		}
 		w("\n")
 		w("### Top failure signatures (cause = other)\n\n| Checks | Signature | Example |\n|---|---|---|\n")
 		for _, sg := range signatures(cases, 40) {
-			w("| %d | %s | `%s` @ %s |\n", sg.n, oneLine(sg.sig), oneLine(truncate(sg.query, 120)), sg.time)
+			w("| %d | %s | `%s` @ %s |\n", sg.N, oneLine(sg.Sig), oneLine(truncate(sg.Query, 120)), sg.Time)
 		}
 		w("\n")
 
@@ -275,24 +256,8 @@ func (rep *Report) Markdown() string {
 			w("\n")
 		}
 		w("### Excluded cases by tag\n\n| Tag | Cases | Of which pass |\n|---|---|---|\n")
-		tagCount := map[string][2]int{}
-		for _, c := range cases {
-			for _, t := range c.Tags {
-				v := tagCount[t]
-				v[0]++
-				if c.Status.Passed() {
-					v[1]++
-				}
-				tagCount[t] = v
-			}
-		}
-		var tags []string
-		for t := range tagCount {
-			tags = append(tags, t)
-		}
-		sort.Strings(tags)
-		for _, t := range tags {
-			w("| %s | %d | %d |\n", t, tagCount[t][0], tagCount[t][1])
+		for _, tc := range tagCounts(cases) {
+			w("| %s | %d | %d |\n", tc.Tag, tc.Cases, tc.Passed)
 		}
 		w("\n")
 	}
@@ -313,7 +278,70 @@ func orAll(s string) string {
 	return s
 }
 
-type evidenceCounts struct{ passed, data, empty, errs int }
+type causeCount struct {
+	Cause          string
+	Involved, Sole int
+}
+
+// causeCounts counts, per cause, the failed in-scope cases with a check of
+// that cause, and those where it is the only cause, most involved first.
+func causeCounts(cases []result.Case) []causeCount {
+	involved, sole := map[string]int{}, map[string]int{}
+	for i := range cases {
+		c := &cases[i]
+		if c.Excluded() || c.Status.Passed() {
+			continue
+		}
+		cs := c.Causes()
+		for _, x := range cs {
+			involved[x]++
+		}
+		if len(cs) == 1 {
+			sole[cs[0]]++
+		}
+	}
+	out := make([]causeCount, 0, len(involved))
+	for x := range involved {
+		out = append(out, causeCount{Cause: x, Involved: involved[x], Sole: sole[x]})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Involved != out[j].Involved {
+			return out[i].Involved > out[j].Involved
+		}
+		return out[i].Cause < out[j].Cause
+	})
+	return out
+}
+
+type tagCount struct {
+	Tag           string
+	Cases, Passed int
+}
+
+func tagCounts(cases []result.Case) []tagCount {
+	m := map[string]*tagCount{}
+	for _, c := range cases {
+		for _, t := range c.Tags {
+			tc := m[t]
+			if tc == nil {
+				tc = &tagCount{Tag: t}
+				m[t] = tc
+			}
+			tc.Cases++
+			if c.Status.Passed() {
+				tc.Passed++
+			}
+		}
+	}
+	out := make([]tagCount, 0, len(m))
+	for _, tc := range m {
+		out = append(out, *tc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Tag < out[j].Tag })
+	return out
+}
+
+type evidenceCounts struct{ Passed, Data, Empty, Errs int }
 
 func evidenceOf(cases []result.Case) evidenceCounts {
 	var e evidenceCounts
@@ -322,14 +350,14 @@ func evidenceOf(cases []result.Case) evidenceCounts {
 		if c.Excluded() || !c.Status.Passed() {
 			continue
 		}
-		e.passed++
+		e.Passed++
 		switch c.Evidence() {
 		case result.EvidenceData:
-			e.data++
+			e.Data++
 		case result.EvidenceEmpty:
-			e.empty++
+			e.Empty++
 		case result.EvidenceError:
-			e.errs++
+			e.Errs++
 		}
 	}
 	return e
@@ -352,8 +380,8 @@ var (
 )
 
 type signature struct {
-	sig, query, time string
-	n                int
+	Sig, Query, Time string
+	N                int
 }
 
 // signatures groups failed checks of cause "other" by their detail with
@@ -376,10 +404,10 @@ func signatures(cases []result.Case, limit int) []signature {
 			d = string(ch.Status) + ": " + truncate(d, 140)
 			sg, ok := m[d]
 			if !ok {
-				sg = &signature{sig: d, query: ch.Query, time: ch.Time}
+				sg = &signature{Sig: d, Query: ch.Query, Time: ch.Time}
 				m[d] = sg
 			}
-			sg.n++
+			sg.N++
 		}
 	}
 	out := make([]signature, 0, len(m))
@@ -387,10 +415,10 @@ func signatures(cases []result.Case, limit int) []signature {
 		out = append(out, *sg)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].n != out[j].n {
-			return out[i].n > out[j].n
+		if out[i].N != out[j].N {
+			return out[i].N > out[j].N
 		}
-		return out[i].sig < out[j].sig
+		return out[i].Sig < out[j].Sig
 	})
 	if len(out) > limit {
 		out = out[:limit]

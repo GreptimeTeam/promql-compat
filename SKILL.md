@@ -6,7 +6,7 @@ description: Run the PromQL compatibility harness against GreptimeDB or Victoria
 # Running promql-compat
 
 The harness measures one target per run against the embedded Prometheus engine and writes
-`REPORT.md` and `results.json` to `--out` (default `out/<timestamp>/`, gitignored).
+`REPORT.md`, `REPORT.html` and `results.json` to `--out` (default `out/<timestamp>/`, gitignored).
 
 ## Build and self-check
 
@@ -55,6 +55,10 @@ The console summary and `REPORT.md` give per suite:
 
 Report the strict rate with the target version, harness revision and suites from the report
 header. Do not quote a rate without the excluded count.
+
+`REPORT.html` is the page to share with people: the same rates, the outcome split, the weakest
+constructs and the top failure signatures. It leaves out the per-case failure list, so investigate
+from `REPORT.md`. Point the user to the file path; it opens without a server.
 
 ## Compare two runs
 

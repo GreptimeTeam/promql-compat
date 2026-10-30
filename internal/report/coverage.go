@@ -11,12 +11,18 @@ import (
 
 var stdParser = parser.NewParser(parser.Options{})
 
-type coverageCell struct{ total, passed, data int }
+type coverageCell struct{ Total, Passed, Data int }
 
-// coverage renders, per PromQL construct and suite, how many in-scope cases
+type coverageRow struct {
+	Construct string
+	// Cells is indexed like the suite names; nil when no case uses the construct.
+	Cells []*coverageCell
+}
+
+// coverageTable counts, per PromQL construct and suite, how many in-scope cases
 // use it, how many pass and how many of those passed with data. Every
 // non-experimental function is listed, so constructs without any case show up.
-func coverage(w func(string, ...any), names []string, m map[string][]result.Case) {
+func coverageTable(names []string, m map[string][]result.Case) []coverageRow {
 	cells := map[string]map[string]*coverageCell{}
 	add := func(construct, suite string, c *result.Case) {
 		if cells[construct] == nil {
@@ -27,11 +33,11 @@ func coverage(w func(string, ...any), names []string, m map[string][]result.Case
 			cell = &coverageCell{}
 			cells[construct][suite] = cell
 		}
-		cell.total++
+		cell.Total++
 		if c.Status.Passed() {
-			cell.passed++
+			cell.Passed++
 			if c.Evidence() == result.EvidenceData {
-				cell.data++
+				cell.Data++
 			}
 		}
 	}
@@ -55,12 +61,23 @@ func coverage(w func(string, ...any), names []string, m map[string][]result.Case
 			}
 		}
 	}
-	rows := make([]string, 0, len(cells))
+	keys := make([]string, 0, len(cells))
 	for k := range cells {
-		rows = append(rows, k)
+		keys = append(keys, k)
 	}
-	sort.Strings(rows)
+	sort.Strings(keys)
+	rows := make([]coverageRow, 0, len(keys))
+	for _, k := range keys {
+		row := coverageRow{Construct: k, Cells: make([]*coverageCell, len(names))}
+		for i, n := range names {
+			row.Cells[i] = cells[k][n]
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
 
+func coverage(w func(string, ...any), names []string, m map[string][]result.Case) {
 	w("## Coverage\n\n")
 	w("In-scope cases per construct, as *passed/total (data)*, where *data* counts passed cases with at least one non-empty result.\n\n")
 	w("| Construct |")
@@ -72,11 +89,11 @@ func coverage(w func(string, ...any), names []string, m map[string][]result.Case
 		w("---|")
 	}
 	w("\n")
-	for _, r := range rows {
-		w("| %s |", r)
-		for _, n := range names {
-			if cell := cells[r][n]; cell != nil {
-				w(" %d/%d (%d) |", cell.passed, cell.total, cell.data)
+	for _, r := range coverageTable(names, m) {
+		w("| %s |", r.Construct)
+		for _, cell := range r.Cells {
+			if cell != nil {
+				w(" %d/%d (%d) |", cell.Passed, cell.Total, cell.Data)
 			} else {
 				w(" 0 |")
 			}

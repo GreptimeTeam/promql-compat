@@ -47,7 +47,7 @@ func main() {
 		probeTime   = flag.String("probe-time", "52m30s", "probe: offset from the dataset start, or from..to/step")
 		probeData   = flag.String("probe-data", "", "probe: promqltest file whose load commands replace the demo dataset (times then count from 0)")
 	)
-	rerender := flag.String("rerender", "", "rewrite REPORT.md next to this results.json and exit")
+	rerender := flag.String("rerender", "", "rewrite REPORT.md and REPORT.html next to this results.json and exit")
 	compareA := flag.String("compare", "", "base results.json; with -against, print flipped cases and exit (status 1 on regressions)")
 	compareB := flag.String("against", "", "new results.json for -compare")
 	flag.Parse()
@@ -70,8 +70,7 @@ func main() {
 		if err := json.Unmarshal(raw, &rep); err != nil {
 			log.Fatal(err)
 		}
-		out := filepath.Join(filepath.Dir(*rerender), "REPORT.md")
-		if err := os.WriteFile(out, []byte(rep.Markdown()), 0o644); err != nil {
+		if err := writeReports(filepath.Dir(*rerender), &rep); err != nil {
 			log.Fatal(err)
 		}
 		fmt.Print(rep.Summary())
@@ -230,12 +229,11 @@ func main() {
 	if err := os.WriteFile(filepath.Join(*outDir, "results.json"), raw, 0o644); err != nil {
 		fatal(err)
 	}
-	md := rep.Markdown()
-	if err := os.WriteFile(filepath.Join(*outDir, "REPORT.md"), []byte(md), 0o644); err != nil {
+	if err := writeReports(*outDir, rep); err != nil {
 		fatal(err)
 	}
 	fmt.Print(rep.Summary())
-	fmt.Printf("\nreport: %s\n", filepath.Join(*outDir, "REPORT.md"))
+	fmt.Printf("\nreport: %s\n        %s\n", filepath.Join(*outDir, "REPORT.md"), filepath.Join(*outDir, "REPORT.html"))
 	if *control {
 		for i := range rep.Cases {
 			if c := &rep.Cases[i]; !c.Excluded() && !c.Status.Passed() {
@@ -243,6 +241,17 @@ func main() {
 			}
 		}
 	}
+}
+
+func writeReports(dir string, rep *report.Report) error {
+	if err := os.WriteFile(filepath.Join(dir, "REPORT.md"), []byte(rep.Markdown()), 0o644); err != nil {
+		return err
+	}
+	page, err := rep.HTML()
+	if err != nil {
+		return fmt.Errorf("render REPORT.html: %w", err)
+	}
+	return os.WriteFile(filepath.Join(dir, "REPORT.html"), []byte(page), 0o644)
 }
 
 // runConfig records what determines the cases, so a run can be reproduced
