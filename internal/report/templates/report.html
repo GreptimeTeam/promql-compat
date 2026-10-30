@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PromQL compatibility · {{.Target}}{{if .Label}} {{.Label}}{{end}}</title>
+{{template "style"}}
+</head>
+<body>
+<main>
+<header>
+  <div class="overline">PromQL compatibility report</div>
+  <h1>{{.Target}}{{if .Build}} {{.Build}}{{end}}{{if .Label}}<span class="label">{{.Label}}</span>{{end}}</h1>
+  <div class="meta">
+    <span><b>Reference</b>Prometheus engine, module {{.Reference}}</span>
+    <span><b>Harness</b>{{.Harness}}</span>
+    <span><b>Fuzz</b>{{.FuzzCount}} queries, seed {{.FuzzSeed}}</span>
+    <span><b>Corpus files</b>{{.Files}}</span>
+    <span><b>Run</b>{{.Started}}, {{.Duration}}</span>
+  </div>
+</header>
+
+<section class="tiles">
+{{- range .Rows}}
+  <div class="tile">
+    <div class="name">{{.Name}}</div>
+    {{- if .Strict.Total}}
+    <div class="value">{{printf "%.1f" (pct .Strict.Passed .Strict.Total)}}%</div>
+    <div class="sub">{{.Strict.Passed}} of {{.Strict.Total}} cases pass · {{.Excluded}} excluded</div>
+    <div class="alt"><span>Ignoring <code>__name__</code></span><span>{{printf "%.1f" (pct .ValuesOnly.Passed .ValuesOnly.Total)}}%</span></div>
+    {{- else}}
+    <div class="value">n/a</div>
+    <div class="sub">no in-scope cases · {{.Excluded}} excluded</div>
+    {{- end}}
+  </div>
+{{- end}}
+</section>
+
+<section class="card">
+  <h2>Outcome of in-scope cases</h2>
+  <p class="caption">Each bar is one suite's in-scope cases. A case passes only if every query it issues matches Prometheus.</p>
+  <div class="legend">
+    <span><i class="c1"></i>Pass</span>
+    <span><i class="c2"></i>Fail only on <code>__name__</code></span>
+    <span><i class="c3"></i>Other failures</span>
+  </div>
+  <div class="bars">
+  {{- range .Rows}}{{if .Strict.Total}}
+    <div class="n">{{.Name}}</div>
+    <div class="bar">
+      {{- if .Strict.Passed}}<span class="c1" tabindex="0" style="flex-grow: {{.Strict.Passed}}" data-v="{{.Strict.Passed}} cases · {{printf "%.1f" (pct .Strict.Passed .Strict.Total)}}%" data-k="{{.Name}} · pass"></span>{{end}}
+      {{- if .NameOnly}}<span class="c2" tabindex="0" style="flex-grow: {{.NameOnly}}" data-v="{{.NameOnly}} cases · {{printf "%.1f" (pct .NameOnly .Strict.Total)}}%" data-k="{{.Name}} · fail only on __name__"></span>{{end}}
+      {{- if .Other}}<span class="c3" tabindex="0" style="flex-grow: {{.Other}}" data-v="{{.Other}} cases · {{printf "%.1f" (pct .Other .Strict.Total)}}%" data-k="{{.Name}} · other failures"></span>{{end}}
+    </div>
+    <div class="t">{{.Strict.Total}} cases</div>
+  {{- end}}{{end}}
+  </div>
+  <details>
+    <summary>Data table</summary>
+    <table>
+      <tr><th>Suite</th><th class="num">In scope</th><th class="num">Pass</th><th class="num">Fail only on <code>__name__</code></th><th class="num">Other failures</th><th class="num">Excluded</th></tr>
+      {{- range .Rows}}
+      <tr><td>{{.Name}}</td><td class="num">{{.Strict.Total}}</td><td class="num">{{.Strict.Passed}}</td><td class="num">{{.NameOnly}}</td><td class="num">{{.Other}}</td><td class="num">{{.Excluded}}</td></tr>
+      {{- end}}
+    </table>
+  </details>
+</section>
+
+<section class="card">
+  <h2>Rates by criterion</h2>
+  <p class="caption"><em>Primary query</em> skips the corpus <code>@</code> variants and range-mode self-check. <em>Passed with data</em> counts passes where a query returned a non-empty result; matching empty results and matching errors also pass.</p>
+  <table>
+    <tr><th>Suite</th><th class="num">Strict</th><th class="num">Primary query</th><th class="num">Ignoring negative timestamps</th><th class="num">Ignoring <code>__name__</code></th><th class="num">Passed with data</th></tr>
+    {{- range .Rows}}
+    <tr><td>{{.Name}}</td><td class="num">{{.Strict}}</td><td class="num">{{.Primary}}</td><td class="num">{{.NegTS}}</td><td class="num">{{.ValuesOnly}}</td><td class="num">{{.Evidence.Data}} / {{.Evidence.Passed}}</td></tr>
+    {{- end}}
+  </table>
+</section>
+
+<section class="card">
+  <h2>Lowest pass rates by construct</h2>
+  <p class="caption">Functions, aggregations and operators used by at least 10 in-scope cases, all suites combined.</p>
+  {{- if .Weakest}}
+  <table>
+    <tr><th>Construct</th><th>Pass rate</th><th class="num">Passed / cases</th>{{range $.Suites}}<th class="num">{{.}}</th>{{end}}</tr>
+    {{- range .Weakest}}
+    <tr>
+      <td><code>{{.Construct}}</code></td>
+      <td><span class="meter"><span style="width: {{printf "%.2f" (pct .Passed .Total)}}%"></span></span> {{printf "%.0f" (pct .Passed .Total)}}%</td>
+      <td class="num">{{.Passed}} / {{.Total}}</td>
+      {{- range .Cells}}<td class="num dim">{{if .}}{{.Passed}}/{{.Total}}{{else}}–{{end}}</td>{{end}}
+    </tr>
+    {{- end}}
+  </table>
+  {{- else}}
+  <p class="empty">No construct has 10 or more in-scope cases.</p>
+  {{- end}}
+  <details>
+    <summary>All constructs (passed/total, passed with data in parentheses)</summary>
+    <table>
+      <tr><th>Construct</th>{{range $.Suites}}<th class="num">{{.}}</th>{{end}}</tr>
+      {{- range .Coverage}}
+      <tr><td><code>{{.Construct}}</code></td>{{range .Cells}}<td class="num">{{if .}}{{.Passed}}/{{.Total}} ({{.Data}}){{else}}<span class="dim">0</span>{{end}}</td>{{end}}</tr>
+      {{- end}}
+    </table>
+  </details>
+</section>
+
+{{- range .Rows}}
+<section class="card">
+  <h2>Suite <code>{{.Name}}</code></h2>
+  <div class="cols">
+    <div>
+      <h3>Failure causes</h3>
+      {{- if .Causes}}
+      <table>
+        <tr><th>Cause</th><th class="num">Cases involved</th><th class="num">Sole cause</th></tr>
+        {{- range .Causes}}
+        <tr><td>{{.Cause}}</td><td class="num">{{.Involved}}</td><td class="num">{{.Sole}}</td></tr>
+        {{- end}}
+      </table>
+      {{- else}}
+      <p class="empty">No in-scope failures.</p>
+      {{- end}}
+    </div>
+    <div>
+      <h3>Excluded cases</h3>
+      {{- if .Tags}}
+      <table>
+        <tr><th>Tag</th><th class="num">Cases</th><th class="num">Of which pass</th></tr>
+        {{- range .Tags}}
+        <tr><td>{{.Tag}}</td><td class="num">{{.Cases}}</td><td class="num">{{.Passed}}</td></tr>
+        {{- end}}
+      </table>
+      {{- else}}
+      <p class="empty">None.</p>
+      {{- end}}
+    </div>
+  </div>
+  {{- if .Signatures}}
+  <h3>Top failure signatures (cause <code>other</code>)</h3>
+  <table>
+    <tr><th class="num">Checks</th><th>Signature</th><th>Example</th></tr>
+    {{- range .Signatures}}
+    <tr><td class="num">{{.N}}</td><td class="sig">{{.Sig}}</td><td><code>{{.Query}}</code> <span class="dim">@ {{.Time}}</span></td></tr>
+    {{- end}}
+  </table>
+  {{- end}}
+</section>
+{{- end}}
+
+<footer>
+  <p>A case passes when every query it issues returns the same result as Prometheus. Cases tagged native_histogram, start_timestamp, experimental, delayed_name_removal or nondeterministic are excluded from every rate. <em>Ignoring <code>__name__</code></em> counts checks whose result differs only in <code>__name__</code> as passed.</p>
+  <p>Every failure with its first failing query is listed in <code>REPORT.md</code>; raw results are in <code>results.json</code>.</p>
+  {{- if .Command}}
+  <p>Command: <code>{{.Command}}</code></p>
+  {{- end}}
+</footer>
+</main>
+{{template "tip"}}
+</body>
+</html>

@@ -56,7 +56,7 @@ go build -o bin/promql-compat ./cmd/promql-compat
 ./bin/promql-compat --control
 ```
 
-Output goes to `out/<timestamp>/` (`--out` to override): `REPORT.md` and `results.json`.
+Output goes to `out/<timestamp>/` (`--out` to override): `REPORT.md`, `REPORT.html` and `results.json`.
 
 `--greptime-version` and `--vm-version` download the release tarball for the current OS and
 architecture from GitHub, check it against the published sha256 and cache the binary under the
@@ -84,7 +84,11 @@ Other modes:
 # Cases that flipped between two runs. Exits with status 1 if an in-scope case regressed.
 ./bin/promql-compat -compare out/a/results.json -against out/b/results.json
 
-# Regenerate REPORT.md from results.json.
+# One page showing how compatibility changes over two or more runs, oldest first: rates per run,
+# cases fixed and regressed between consecutive runs, and the constructs that changed most.
+./bin/promql-compat -compare-html out/history.html out/a/results.json out/b/results.json out/c/results.json
+
+# Regenerate REPORT.md and REPORT.html from results.json.
 ./bin/promql-compat --rerender out/a/results.json
 
 # Print both results of queries on the demo dataset (time is an offset from the dataset start,
@@ -113,6 +117,11 @@ functions without cases show up.
 
 It also lists outcomes by status, failure causes, the most frequent failure signatures, results
 per corpus file or query template, and every in-scope failure with its first failing query.
+
+`REPORT.html` is a self-contained one-page summary of the same run: rates per suite, the split of
+failed cases into `__name__`-only and other failures, the constructs with the lowest pass rates,
+and per suite the failure causes, excluded tags and top failure signatures. The full failure list
+is only in `REPORT.md`.
 
 ## Reproducing a run
 
